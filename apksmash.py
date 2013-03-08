@@ -1,7 +1,7 @@
 #!/usr/bin/python
 #
 #
-# Version: 2.34		Last Update Date: 3/6/2013
+# Version: 2.37		Last Update Date: 3/8/2013
 #
 # Contact: corey.benninger at intrepidusgroup.com 
 #
@@ -15,7 +15,7 @@
 # "iglogger.smali" is copied into the "smali" directory before doing a build.
 #
 #
-# Updates: Fixed bug that only found first issue in a class file
+# Updates: Clean up some search/regex terms
 # ToDo: parse Manifest, look for non-standard files in zip (now in batch file)
 #
 
@@ -38,46 +38,21 @@ needs_extra_formatting = ['HTTP', 'HTTPS', 'DECRYPT']
 
 ##### These are the items to look for and how it should be listed in the 'outputfilename'
 searchterms = {'android/content/Context;->openFileOutput': 'OpenFile',
-	       'Landroid/os/Binder;->getCallingUid' : 'UID Check',
-	       'Landroid/content/Context;->checkCallingOrSelfPermission': 'Calling PERMISSION check',
-	       'Landroid/telephony/TelephonyManager;->getPhoneType': 'PhoneType check',
-	       'Landroid/telephony/TelephonyManager;->getDevice': 'DEVICE NUM or ID check',
                'Landroid/os/Build;->BOARD': 'Emulator Check (BOARD)',
                'Landroid/os/Build;->DEVICE': 'Device Check',
-               'android/util/Log;->': 'LOG',
-               'Ljava/io/PrintStream;->println' : "LOG (println)",
-               'method public static main': "TEST CODE 'main()' method",
-               'Landroid/telephony/SmsManager': 'SMS Manager',
                'java/lang/System;->loadLibrary': 'LoadLibrary',
-               'java/lang/Runtime;->exec': 'Runtime Exec',
-               'Ljavax/net/ssl/TrustManager': 'SSL PINNING (trustmanager)',           
-               'DEBUG:Z': 'DEBUG Boolean',
-               '"su"': "Possible ROOT Detection 'su'",
-               'superuser': "Possible ROOT Detection 'superuser'",
-               'busybox': "Possible ROOT Detection 'busybox'",
-               'debug': 'DEBUG',               
+               'java/lang/Runtime;->exec': 'Runtime Exec',           
                'decrypt': 'DECRYPT',
                'https://': 'HTTPS',
                'http://': 'HTTP',
                'addJavascriptInterface': 'JAVASCRIPT Interface',
                'setJavaScriptEnabled': 'JAVASCRIPT Set Enabled ',
                'setPluginsEnabled': 'Webview Set PLUGINS Enabled Method',
-               'Landroid/content/Intent;-><init>': 'INTENT being generated',
-               'Landroid/content/Context;->getSharedPreferences': 'Shared Prefs used',
-               'Landroid/database/sqlite/SQLiteDatabase;->openDatabase': 'SQLite Database Open cmd',
-               'Landroid/os/Environment;->getExternalStorageDirectory': 'External Storage check',
-               'Landroid/os/Environment;->DIRECTORY_PICTURES': 'Asking for Picture directory',
-               'Ljava/net/HttpURLConnection': 'HttpURLConnection',
-	       'Ljava/security': 'Java Lang Security',
-               'Landroid/content/pm/PackageManager': 'PackageManager',
-               'Landroid/net/ConnectivityManager': 'Possible Network Check - ConnectivityManger'
+               'Landroid/content/pm/PackageManager': 'PackageManager'
                }
                
-regexsearchterms = {'"[\d]{9,10}"': 'PHONE NUMBER (9digits)',
-                    '"[\d]{1,6}-[\d]{3}-[\d]{4}"': 'PHONE NUMBER (regex)',
+regexsearchterms = {'"[\d]{1,6}-[\d]{3}-[\d]{4}"': 'PHONE NUMBER (regex)',
                     '(?:\d{1,3}\.){3}\d{1,3}': 'IP Addresses',
-                    'd{13,16}': 'LAME Check for CreditCard (...really)',
-                    '((A-Za-z0-9+/){4,4})*(A-Z-a-z0-9+/=){4,4}': 'LAME Check Base64 (ends with two equals)',
                     '[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,4}': 'EMAIL Address'
 	           }
 	           
