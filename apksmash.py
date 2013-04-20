@@ -1,7 +1,7 @@
 #!/usr/bin/python
 #
 #
-# Version: 2.5		Last Update Date: 4/20/2013
+# Version: 2.50		Last Update Date: 4/20/2013
 #
 # Contact: 0xb3nn (was corey.benninger at intrepidusgroup.com )
 #
@@ -38,7 +38,7 @@ import tempfile
 print "Starting fixstrings and apk analysis...\n"
 
 ##### This flag will insert debugging statements into the APK.
-JonestownThisAPK = True
+JonestownThisAPK = False
 
 ##### Some packages can be nosiy and not important for analysis. Use this to skip them in APKSmash.
 ##### This match happens on the file directory name or the package, so use '\\' instead of '.'
