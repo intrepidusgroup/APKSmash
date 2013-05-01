@@ -1,7 +1,7 @@
 #!/usr/bin/python
 #
 #
-# Version: 2.50		Last Update Date: 4/20/2013
+# Version: 2.55		Last Update Date: 4/24/2013
 #
 # Contact: 0xb3nn (was corey.benninger at intrepidusgroup.com )
 #
@@ -14,12 +14,12 @@
 # If massacring this APK with JonestownThisAPK = True, then make sure that
 # "iglogger.smali" is copied into the "smali" directory before doing a build.
 #   
-#    !!!MAKE SURE TO USE IGLogger > 2.50 if JonestownThisAPK is TRUE!!!
+#    !!!MAKE SURE TO USE IGLogger > 2.55 if JonestownThisAPK is TRUE!!!
 #
-# Updates: Changes to Jonestown - traces: fixed string compare for objects, 
-#		added sql, sharedprefs, Intent messages!
-#	   Better support for virtual calls as well now
-#	   Ability to skip certain packages (see 'skip_classes')
+# Updates: Cleaned up if statements (quite a bit faster for large APKs now)
+#	   Bug fix for "return" checks, less false positives
+#	   Can now insert "Fake line numbers" - Helps with obfuscated apps, might
+#		want to turn off for non-obfuscated. Also get the new IGLogger
 # 
 # Known Issues: Sometimes Jonestown seems to be confusing DDMS/Monitor and log
 #               tags and messages get munged in the logs. Try logcat from the 
@@ -39,6 +39,7 @@ print "Starting fixstrings and apk analysis...\n"
 
 ##### This flag will insert debugging statements into the APK.
 JonestownThisAPK = False
+InsertFakeLineNumbers = True
 
 ##### Some packages can be nosiy and not important for analysis. Use this to skip them in APKSmash.
 ##### This match happens on the file directory name or the package, so use '\\' instead of '.'
@@ -82,6 +83,9 @@ searchterms = {'android/content/Context;->openFileOutput': 'OpenFile',
                'Landroid/database/sqlite/SQLiteDatabase;->openDatabase': 'SQLite Database Open cmd',
                'Landroid/os/Environment;->getExternalStorageDirectory': 'External Storage check',
                'Landroid/os/Environment;->DIRECTORY_PICTURES': 'Asking for Picture directory',
+               'getWritableDatabase(Ljava/lang/String;)Linfo/guardianproject/database/sqlcipher/SQLiteDatabase': 'SQLCipher (password)',
+               'SQLiteDatabase;->openDatabase(Ljava/lang/String;Ljava/lang/String;': 'SQLCipher (password 2nd string)',
+               'SQLiteDatabase;->openOrCreateDatabase(Ljava/lang/String;Ljava/lang/String;': 'SQLCipher (password 2nd string)',
                'Ljava/net/HttpURLConnection': 'HttpURLConnection',
 	       'Ljava/security': 'Java Lang Security',
                'Landroid/content/pm/PackageManager': 'PackageManager',
@@ -281,6 +285,7 @@ lines_this_method = []
 
 ##### New Method, clear stored values Counter is as follows: {searchterm: [count, [list_of_occurnces]]}
 counter = {}
+linecount = 1
 lastsearch = ""
 LogAfterMove = False
 isBooleanFunction = False
@@ -321,7 +326,7 @@ for f in fileList:
 				isIntentFunction = True
 				IntentType = "Service"				
 				
-				
+		smashline = ""		
 		
 		##### Monitor screws things up right now.
 		if line.find(' monitor-enter ') > 1:
@@ -380,128 +385,135 @@ for f in fileList:
                         
                 
                 ##### Trace out functions returning booleans and log. Make sure to include spaces in " return " below
-                if JonestownThisAPK and isBooleanFunction and notMonitorFunction and (line.find(' return ') > 1):
-                	smalivar =  str(line.split("return ")[-1]).strip()
-                	if int(smalivar[1:]) > 15:
-                		smaliOut.write("    move/from16 v0, " + smalivar  + "\n")
-                		smalivar = "v0"
-                	smaliOut.write("    invoke-static {" + smalivar + "}, Liglogger;->trace_boolmethod(Z)I" + "\n")
+                if JonestownThisAPK:
+                	if isBooleanFunction and notMonitorFunction and (line.find('    return') == 0):
+				smalivar =  str(line.split("return ")[-1]).strip()
+				if int(smalivar[1:]) > 15:
+					smaliOut.write("    move/from16 v0, " + smalivar  + "\n")
+					smalivar = "v0"
+				smashline += "    invoke-static {" + smalivar + "}, Liglogger;->trace_boolmethod(Z)I" + "\n"
                 
-                ##### Intents migth be interesting to know when they are being thrown and for what
-		if JonestownThisAPK and line.find('Landroid/content/Intent;-><init>(Ljava/lang/String;)V') > 0:
-			smaliOut.write(get_header1var(line, 2) + "Liglogger;->trace_intent(Ljava/lang/String;)I" + "\n")
-		if JonestownThisAPK and ( line.find('Landroid/content/Context;->startActivity(Landroid/content/Intent;)V') > 0 or line.find('Landroid/app/Activity;->startActivity(Landroid/content/Intent;)V') > 0):
-			smaliOut.write(get_header1var(line, 2) + "Liglogger;->trace_intent_sendactivity(Landroid/content/Intent;)I" + "\n")
-		if JonestownThisAPK and line.find('Landroid/content/Context;->sendBroadcast(Landroid/content/Intent;)V') > 0:
-			smaliOut.write(get_header1var(line, 2) + "Liglogger;->trace_intent_sendbroadcast(Landroid/content/Intent;)I" + "\n")
-		if JonestownThisAPK and line.find('Landroid/content/Context;->startService(Landroid/content/Intent;)') > 0:
-			smaliOut.write(get_header1var(line, 2) + "Liglogger;->trace_intent_sendservice(Landroid/content/Intent;)I" + "\n")
+			##### Intents migth be interesting to know when they are being thrown and for what
+			elif line.find('Landroid/content/Intent;-><init>(Ljava/lang/String;)V') > 0:
+				smashline += get_header1var(line, 2) + "Liglogger;->trace_intent(Ljava/lang/String;)I" + "\n"
+			elif ( line.find('Landroid/content/Context;->startActivity(Landroid/content/Intent;)V') > 0 or line.find('Landroid/app/Activity;->startActivity(Landroid/content/Intent;)V') > 0):
+				smashline += get_header1var(line, 2) + "Liglogger;->trace_intent_sendactivity(Landroid/content/Intent;)I" + "\n"
+			elif line.find('Landroid/content/Context;->sendBroadcast(Landroid/content/Intent;)V') > 0:
+				smashline += get_header1var(line, 2) + "Liglogger;->trace_intent_sendbroadcast(Landroid/content/Intent;)I" + "\n"
+			elif line.find('Landroid/content/Context;->startService(Landroid/content/Intent;)') > 0:
+				smashline += get_header1var(line, 2) + "Liglogger;->trace_intent_sendservice(Landroid/content/Intent;)I" + "\n"
 
-		##### String compares are interesting.
-		if JonestownThisAPK and ( line.find('Ljava/lang/String;->equals(Ljava/lang/Object;)Z') > 0 ):		
-			smaliOut.write( get_header2var(line, 1, 2) + "Liglogger;->trace_stringcompare(Ljava/lang/String;Ljava/lang/Object;)I" + "\n")
-		if JonestownThisAPK and ( line.find('Ljava/lang/String;->equalsIgnoreCase(Ljava/lang/String;)Z') > 0):	
-			smaliOut.write( get_header2var(line, 1, 2) + "Liglogger;->trace_stringcompare(Ljava/lang/String;Ljava/lang/String;)I" + "\n")
+			##### String compares are interesting.
+			elif ( line.find('Ljava/lang/String;->equals(Ljava/lang/Object;)Z') > 0 ):		
+				smashline += get_header2var(line, 1, 2) + "Liglogger;->trace_stringcompare(Ljava/lang/String;Ljava/lang/Object;)I" + "\n"
+			elif ( line.find('Ljava/lang/String;->equalsIgnoreCase(Ljava/lang/String;)Z') > 0):	
+				smashline += get_header2var(line, 1, 2) + "Liglogger;->trace_stringcompare(Ljava/lang/String;Ljava/lang/String;)I" + "\n"
 
-		#### Log HTTP Basic Name/Value pairs when created
-		if JonestownThisAPK and ( line.find('Lorg/apache/http/message/BasicNameValuePair;-><init>(Ljava/lang/String;Ljava/lang/String;)V') > 0 ):		
-			smaliOut.write( get_header2var(line, 2, 3) + "Liglogger;->trace_basicnamevaluepair(Ljava/lang/String;Ljava/lang/String;)I" + "\n")
+			#### Log HTTP Basic Name/Value pairs when created
+			elif ( line.find('Lorg/apache/http/message/BasicNameValuePair;-><init>(Ljava/lang/String;Ljava/lang/String;)V') > 0 ):		
+				smashline += get_header2var(line, 2, 3) + "Liglogger;->trace_basicnamevaluepair(Ljava/lang/String;Ljava/lang/String;)I" + "\n"
 
+			##### Log JSON objects
+			elif ( line.find('Lorg/json/JSONObject;-><init>(Ljava/lang/String;)') > 0 ):	
+				smashline += get_header1var(line, 2) + "Liglogger;->trace_json(Ljava/lang/String;)I" + "\n"
 
-		##### Log JSON objects
-		if JonestownThisAPK and ( line.find('Lorg/json/JSONObject;-><init>(Ljava/lang/String;)') > 0 ):	
-			smaliOut.write(get_header1var(line, 2) + "Liglogger;->trace_json(Ljava/lang/String;)I" + "\n")
+			##### Log New HTTP Requests
+			elif ( line.find('Lorg/apache/http/client/methods/HttpGet;-><init>(Ljava/lang/String;)V') > 0 or line.find('Lorg/apache/http/client/methods/HttpPost;-><init>(Ljava/lang/String;)V') > 0):	
+				smashline += get_header1var(line, 2) + "Liglogger;->trace_httpstring(Ljava/lang/String;)I" + "\n"
 
-		##### Log New HTTP Requests
-		if JonestownThisAPK and ( line.find('Lorg/apache/http/client/methods/HttpGet;-><init>(Ljava/lang/String;)V') > 0 or line.find('Lorg/apache/http/client/methods/HttpPost;-><init>(Ljava/lang/String;)V') > 0):	
-			smaliOut.write(get_header1var(line, 2) + "Liglogger;->trace_httpstring(Ljava/lang/String;)I" + "\n")
+			##### Log New WebView Load URL 
+			elif ( line.find('Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V') > 0):
+				smashline += get_header1var(line, 2) + "Liglogger;->trace_httpstring(Ljava/lang/String;)I" + "\n"
+
+			##### Log New HTTP StringEntity
+			elif ( line.find('Lorg/apache/http/entity/StringEntity;-><init>(Ljava/lang/String;)V') > 0 ):
+				smashline += get_header1var(line, 2) + "Liglogger;->trace_httpstring(Ljava/lang/String;)I" + "\n"
+
+			##### Log dabase column get (happens right before database data is returned)
+			elif ( line.find('Landroid/database/Cursor;->getColumnIndex(Ljava/lang/String;)') > 0 ):
+				smashline += get_header1var(line, 2) + "Liglogger;->trace_dbcolumn(Ljava/lang/String;)I" + "\n"
+
+			##### Log access to a SharedPreferences file
+			elif ( line.find('Landroid/content/Context;->getSharedPreferences(Ljava/lang/String;I)Landroid/content/SharedPreferences') > 0 ):
+				smashline += get_header1var(line, 2) + "Liglogger;->trace_sharedpref(Ljava/lang/String;)I" + "\n"
+
+			##### Log SQL statements
+			elif ( line.find('Landroid/database/sqlite/SQLiteDatabase;->update(Ljava/lang/String;Landroid/content/ContentValues;Ljava/lang/String;[Ljava/lang/String;)I') > 0 ):			
+				smalivar2 =  get_var_from_line(line, 2)
+				smalivar3 =  get_var_from_line(line, 3)
+				smalivar4 =  get_var_from_line(line, 4)
+				smalivar5 =  get_var_from_line(line, 5)
+				smashline += "    invoke-static {" + smalivar2 + ", " + smalivar3 + ", " + smalivar4 + ", " + smalivar5 + "}, Liglogger;->trace_sqlupdate(Ljava/lang/String;Landroid/content/ContentValues;Ljava/lang/String;[Ljava/lang/String;)I" + "\n"
+
+			elif ( line.find('Landroid/database/sqlite/SQLiteDatabase;->execSQL(Ljava/lang/String;)V') > 0 ):
+				smashline += get_header1var(line, 2) + "Liglogger;->trace_sqlstring(Ljava/lang/String;)I" + "\n"
+
+			##### Log SQL statements
+			elif ( line.find('Landroid/database/sqlite/SQLiteDatabase;->query(Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor') > 0 ):			
+				smalivar2 =  get_var_from_line(line, 2)
+				smalivar8 =  get_var_from_line(line, 8)
+				smashline += "    invoke-static/range {" + smalivar2 + " .. " + smalivar8 + "}, Liglogger;->trace_sqlquery(Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I" + "\n"
+			elif ( line.find('SQLiteDatabase;->query(ZLjava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor') > 0 ):			
+				smalivar2 =  get_var_from_line(line, 2)
+				smalivar10 =  get_var_from_line(line, 10)
+				smashline += "    invoke-static/range {" + smalivar2 + " .. " + smalivar10 + "}, Liglogger;->trace_sqlquery(ZLjava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I" + "\n"
+			elif ( line.find('Landroid/database/sqlite/SQLiteDatabase;->query(Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor') > 0 ):			
+				smalivar2 =  get_var_from_line(line, 2)
+				smalivar9 =  get_var_from_line(line, 9)
+				smashline += "    invoke-static/range {" + smalivar2 + " .. " + smalivar9 + "}, Liglogger;->trace_sqlquery(Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I" + "\n"
+			elif ( line.find('SQLiteDatabase;->query(ZLjava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor') > 0 ):			
+				smalivar2 =  get_var_from_line(line, 2)
+				smalivar11 =  get_var_from_line(line, 11)
+				smashline += "    invoke-static/range {" + smalivar2 + " .. " + smalivar11 + "}, Liglogger;->trace_sqlquery(ZLjava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I" + "\n"
 		
-		##### Log New WebView Load URL 
-		if JonestownThisAPK and ( line.find('Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V') > 0):
-			smaliOut.write(get_header1var(line, 2) + "Liglogger;->trace_httpstring(Ljava/lang/String;)I" + "\n")
-
-
-		##### Log New HTTP StringEntity
-		if JonestownThisAPK and ( line.find('Lorg/apache/http/entity/StringEntity;-><init>(Ljava/lang/String;)V') > 0 ):
-			smaliOut.write(get_header1var(line, 2) + "Liglogger;->trace_httpstring(Ljava/lang/String;)I" + "\n")
-
-		##### Log dabase column get (happens right before database data is returned)
-		if JonestownThisAPK and ( line.find('Landroid/database/Cursor;->getColumnIndex(Ljava/lang/String;)') > 0 ):
-			smaliOut.write(get_header1var(line, 2) + "Liglogger;->trace_dbcolumn(Ljava/lang/String;)I" + "\n")
-
-		##### Log access to a SharedPreferences file
-		if JonestownThisAPK and ( line.find('Landroid/content/Context;->getSharedPreferences(Ljava/lang/String;I)Landroid/content/SharedPreferences') > 0 ):
-			smaliOut.write(get_header1var(line, 2) + "Liglogger;->trace_sharedpref(Ljava/lang/String;)I" + "\n")
-
-		##### Log SQL statements
-		if JonestownThisAPK and ( line.find('Landroid/database/sqlite/SQLiteDatabase;->update(Ljava/lang/String;Landroid/content/ContentValues;Ljava/lang/String;[Ljava/lang/String;)I') > 0 ):			
-			smalivar2 =  get_var_from_line(line, 2)
-			smalivar3 =  get_var_from_line(line, 3)
-			smalivar4 =  get_var_from_line(line, 4)
-			smalivar5 =  get_var_from_line(line, 5)
-			smaliOut.write("    invoke-static {" + smalivar2 + ", " + smalivar3 + ", " + smalivar4 + ", " + smalivar5 + "}, Liglogger;->trace_sqlupdate(Ljava/lang/String;Landroid/content/ContentValues;Ljava/lang/String;[Ljava/lang/String;)I" + "\n")
-		
-		if JonestownThisAPK and ( line.find('Landroid/database/sqlite/SQLiteDatabase;->execSQL(Ljava/lang/String;)V') > 0 ):
-			smaliOut.write(get_header1var(line, 2) + "Liglogger;->trace_sqlstring(Ljava/lang/String;)I" + "\n")
-
-
-		##### Log SQL statements
-		if JonestownThisAPK and ( line.find('Landroid/database/sqlite/SQLiteDatabase;->query(Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor') > 0 ):			
-			smalivar2 =  get_var_from_line(line, 2)
-			smalivar8 =  get_var_from_line(line, 8)
-			smaliOut.write("    invoke-static/range {" + smalivar2 + " .. " + smalivar8 + "}, Liglogger;->trace_sqlquery(Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I" + "\n")
-		if JonestownThisAPK and ( line.find('query(ZLjava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor') > 0 ):			
-			smalivar2 =  get_var_from_line(line, 2)
-			smalivar10 =  get_var_from_line(line, 10)
-			smaliOut.write("    invoke-static/range {" + smalivar2 + " .. " + smalivar10 + "}, Liglogger;->trace_sqlquery(ZLjava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I" + "\n")
-		if JonestownThisAPK and ( line.find('Landroid/database/sqlite/SQLiteDatabase;->query(Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor') > 0 ):			
-			smalivar2 =  get_var_from_line(line, 2)
-			smalivar9 =  get_var_from_line(line, 9)
-			smaliOut.write("    invoke-static/range {" + smalivar2 + " .. " + smalivar9 + "}, Liglogger;->trace_sqlquery(Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I" + "\n")
-		if JonestownThisAPK and ( line.find('query(ZLjava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor') > 0 ):			
-			smalivar2 =  get_var_from_line(line, 2)
-			smalivar11 =  get_var_from_line(line, 11)
-			smaliOut.write("    invoke-static/range {" + smalivar2 + " .. " + smalivar11 + "}, Liglogger;->trace_sqlquery(ZLjava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I" + "\n")
-		
-		
-
+		if InsertFakeLineNumbers and len(smashline) > 0:
+			smashline = "    .line " + str(linecount) + "\n" + smashline 
+			linecount += 1
 			
 		##### This writes out the current line
 		lines_this_method.append(line)
+		smaliOut.write(smashline)
 		smaliOut.write(line) 
 		
+		smashline = ""
+		
 		##### At this point, writes are adding after the orginal line of smali code
-	
-		##### JonesTown
-		#####    To help with obfuscated apps, log out each time we enter a new method
-		#####
-		if JonestownThisAPK and line.find('prologue') > 0:
-			smaliOut.write("    invoke-static {}, Liglogger;->trace_method()I" + "\n")
-			if isIntentFunction:
-				if IntentType == "Service":
-					smaliOut.write("    invoke-static {p1}, Liglogger;->trace_intent_receiveservice(Landroid/content/Intent;)I" + "\n")
-				elif IntentType == "Broadcast":
-					smaliOut.write("    invoke-static {p2}, Liglogger;->trace_intent_receivebroadcast(Landroid/content/Intent;)I" + "\n")
+		if JonestownThisAPK:
+			#####    To help with obfuscated apps, log out each time we enter a new method
+			if line.find('prologue') > 0:
+				smashline += "    invoke-static {}, Liglogger;->trace_method()I" + "\n"
+				if isIntentFunction:
+					if IntentType == "Service":
+						smashline += "    invoke-static {p1}, Liglogger;->trace_intent_receiveservice(Landroid/content/Intent;)I" + "\n"
+					elif IntentType == "Broadcast":
+						smashline += "    invoke-static {p2}, Liglogger;->trace_intent_receivebroadcast(Landroid/content/Intent;)I" + "\n"
 					
-		##### Log dabase column get (happens right before database data is returned)
-		if JonestownThisAPK and ( line.find('Landroid/database/Cursor;->getString(I)Ljava/lang/String;') > 0 ):
-			LogAfterMove = True
-			LogAfterMoveType = "dbcursor"
+			##### Log dabase column get (happens right before database data is returned)
+			elif line.find('Landroid/database/Cursor;->getString(I)Ljava/lang/String;') > 0:
+				LogAfterMove = True
+				LogAfterMoveType = "dbcursor"
 
-		##### Log Intent (this should be from an Activity class)
-		if JonestownThisAPK and ( line.find(';->getIntent()Landroid/content/Intent;') > 0 ):
-			LogAfterMove = True
-			LogAfterMoveType = "activityintent"
+			##### Log Intent (this should be from an Activity class)
+			elif line.find(';->getIntent()Landroid/content/Intent;') > 0 :
+				LogAfterMove = True
+				LogAfterMoveType = "activityintent"
 			
-		##### Note this is really risky and error prone - disable this if things are breaking on recompile
-		if JonestownThisAPK and LogAfterMove and (LogAfterMoveType == "dbcursor") and ( line.find('move-result-object') > 0 ):
-			smaliOut.write(get_header1move(line) + "Liglogger;->trace_dbgetstring(Ljava/lang/String;)I" + "\n")
-			LogAfterMove = False			
+			##### Note this is really risky and error prone - disable this if things are breaking on recompile
+			elif LogAfterMove and (LogAfterMoveType == "dbcursor") and ( line.find('move-result-object') > 0 ):
+				smashline += get_header1move(line) + "Liglogger;->trace_dbgetstring(Ljava/lang/String;)I" + "\n"
+				LogAfterMove = False			
 
-		##### Note this is really risky and error prone - disable this if things are breaking on recompile
-		if JonestownThisAPK and LogAfterMove and (LogAfterMoveType == "activityintent") and ( line.find('move-result-object') > 0 ):
-			smaliOut.write(get_header1move(line) + "Liglogger;->trace_intent_receiveactivity(Landroid/content/Intent;)I" + "\n")
-			LogAfterMove = False	
+			##### Note this is really risky and error prone - disable this if things are breaking on recompile
+			elif LogAfterMove and (LogAfterMoveType == "activityintent") and ( line.find('move-result-object') > 0 ):
+				smashline += get_header1move(line) + "Liglogger;->trace_intent_receiveactivity(Landroid/content/Intent;)I" + "\n"
+				LogAfterMove = False	
+		
+		if InsertFakeLineNumbers and len(smashline) > 0 :
+			smashline = "    .line " + str(linecount) + "\n" + smashline 
+			linecount += 1
+			
+		##### Write out afterwards
+		smaliOut.write(smashline)
 			
 	
 	smaliIn.close()

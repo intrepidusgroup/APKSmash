@@ -67,6 +67,12 @@ top of the file.
 Version History
 ===============
 
+v2.55 
+
+ + Cleaned up if statements (quite a bit faster for large APKs now)
+ + Bug fix for "return" checks, less false positives
+ + Can now insert "Fake line numbers" - Helps with obfuscated apps, might want to turn off for non-obfuscated. Also get the new IGLogger > 2.55 for better Line Number support.
+ 
 v2.50 
 
  + MAKE SURE TO USE IGLogger > 2.50 if JonestownThisAPK is TRUE
